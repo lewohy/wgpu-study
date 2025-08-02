@@ -3,6 +3,7 @@ use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+use wgpu::util::DeviceExt;
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -10,6 +11,54 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
+
+#[repr(C)]
+// Pod: Vertex가 Plain Old Data로, 안전한 &[u8]캐스팅 가능함
+// Zeroable: Vertex가 모든 필드가 0으로 초기화된 상태로 안전하게 생성될 수 있음을 나타냄
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+impl Vertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            // vertex의 크기
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            // buffer의 array가 per-vertex인지 per-instance인지 설정
+            step_mode: wgpu::VertexStepMode::Vertex,
+            // vertex의 field와 1:1로 attribute를 describe함
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex {
+        position: [0.0, 0.5, 0.0],
+        color: [1.0, 0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.0],
+        color: [0.0, 1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.0],
+        color: [0.0, 0.0, 1.0],
+    },
+];
 
 /// 애플리케이션의 상태를 저장할 구조체This will store the state of our game
 pub struct State {
@@ -24,6 +73,8 @@ pub struct State {
     is_surface_configured: bool,
     /// render pipeline
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
     window: Arc<Window>,
 }
 
@@ -125,8 +176,8 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                // 어떤 타입의 vertex를 넘길지 설정
-                buffers: &[],
+                // buffer의 descriptor를 설정함
+                buffers: &[Vertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             // color data를 surface에 저장하려면 fragment가 필요함
@@ -178,6 +229,14 @@ impl State {
             cache: None,
         });
 
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let num_vertices = VERTICES.len() as u32;
+
         Ok(Self {
             surface,
             device,
@@ -185,6 +244,8 @@ impl State {
             config,
             is_surface_configured: false,
             render_pipeline,
+            vertex_buffer,
+            num_vertices,
             window,
         })
     }
@@ -258,8 +319,18 @@ impl State {
 
             // render pass에 pipeline을 설정
             render_pass.set_pipeline(&self.render_pipeline);
-            // 3개 vertex인 instance 1개를 그림
-            render_pass.draw(0..3, 0..1); // 3.
+            // vertex buffer 설정
+            render_pass.set_vertex_buffer(
+                // 사용할 vertex buffer에 대한 slot
+                0,
+                self.vertex_buffer.slice(..),
+            );
+            render_pass.draw(
+                // vertex buffer의 vertex갯수만큼 그림
+                0..self.num_vertices,
+                // 1번 그림
+                0..1,
+            );
         }
 
         // command buffer를 종료하고 GPU에 제출

@@ -2053,6 +2053,7 @@ name = "wgpu-study"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "console_error_panic_hook",
  "console_log",
  "env_logger",
