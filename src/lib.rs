@@ -23,7 +23,8 @@ pub struct State {
     /// resize가 발생하면 `true`로 설정됨
     is_surface_configured: bool,
     /// render pipeline
-    render_pipeline: wgpu::RenderPipeline,
+    render_pipelines: Vec<wgpu::RenderPipeline>,
+    render_pipeline_index: usize,
     window: Arc<Window>,
 }
 
@@ -119,64 +120,73 @@ impl State {
                 push_constant_ranges: &[],
             });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                // 어떤 타입의 vertex를 넘길지 설정
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            // color data를 surface에 저장하려면 fragment가 필요함
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                // 어떤 color output을 사용할 지 설정
-                targets: &[Some(wgpu::ColorTargetState {
-                    // surface와 같은 format을 사용하여 복사가 쉬워짐
-                    format: config.format,
-                    // old pixel을 교체하도록 설정
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    // 모든 color를 write하도록 설정
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            // vertices를 기본 도형으로 변환할 때 어떻게 해석할지 설정
-            primitive: wgpu::PrimitiveState {
-                // 3개의 점을 삼각형으로 해석
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                // 어느 방향이 앞면인지 설정
-                front_face: wgpu::FrontFace::Ccw,
-                // back방향 면은 렌더링에 포함하지 않음
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: None, // 1.
-            multisample: wgpu::MultisampleState {
-                // 몇 개의 pipeline을 사용할지 설정
-                // multisampling을 사용하지 않으므로 1로 설정
-                count: 1,
-                // 어떤 sample mask를 사용할지 설정
-                // 모든 bit를 1로 설정하여 모든 sample이 활성화됨
-                mask: !0,
-                // antialiasing을 사용하지 않으므로 false로 설정
-                alpha_to_coverage_enabled: false,
-            },
-            // render attachment가 얼마나 많은 array layers를 가질지 설정
-            // array texture로 렌더링하지 않으므로 None으로 설정
-            multiview: None,
-            // shader compilation을 캐싱할지 설정함. 안드로이드 타겟에서나 효과적임
-            cache: None,
-        });
+        let render_pipelines = vec![0, 1]
+            .iter()
+            .map(|i| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Render Pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: if *i == 0 {
+                            Some("vs_main")
+                        } else {
+                            Some("vs_main_challenge")
+                        },
+                        // 어떤 타입의 vertex를 넘길지 설정
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    // color data를 surface에 저장하려면 fragment가 필요함
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some("fs_main"),
+                        // 어떤 color output을 사용할 지 설정
+                        targets: &[Some(wgpu::ColorTargetState {
+                            // surface와 같은 format을 사용하여 복사가 쉬워짐
+                            format: config.format,
+                            // old pixel을 교체하도록 설정
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            // 모든 color를 write하도록 설정
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    // vertices를 기본 도형으로 변환할 때 어떻게 해석할지 설정
+                    primitive: wgpu::PrimitiveState {
+                        // 3개의 점을 삼각형으로 해석
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        // 어느 방향이 앞면인지 설정
+                        front_face: wgpu::FrontFace::Ccw,
+                        // back방향 면은 렌더링에 포함하지 않음
+                        cull_mode: Some(wgpu::Face::Back),
+                        // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        // Requires Features::DEPTH_CLIP_CONTROL
+                        unclipped_depth: false,
+                        // Requires Features::CONSERVATIVE_RASTERIZATION
+                        conservative: false,
+                    },
+                    depth_stencil: None, // 1.
+                    multisample: wgpu::MultisampleState {
+                        // 몇 개의 pipeline을 사용할지 설정
+                        // multisampling을 사용하지 않으므로 1로 설정
+                        count: 1,
+                        // 어떤 sample mask를 사용할지 설정
+                        // 모든 bit를 1로 설정하여 모든 sample이 활성화됨
+                        mask: !0,
+                        // antialiasing을 사용하지 않으므로 false로 설정
+                        alpha_to_coverage_enabled: false,
+                    },
+                    // render attachment가 얼마나 많은 array layers를 가질지 설정
+                    // array texture로 렌더링하지 않으므로 None으로 설정
+                    multiview: None,
+                    // shader compilation을 캐싱할지 설정함. 안드로이드 타겟에서나 효과적임
+                    cache: None,
+                })
+            })
+            .collect();
 
         Ok(Self {
             surface,
@@ -184,7 +194,8 @@ impl State {
             queue,
             config,
             is_surface_configured: false,
-            render_pipeline,
+            render_pipelines,
+            render_pipeline_index: 0,
             window,
         })
     }
@@ -257,7 +268,7 @@ impl State {
             });
 
             // render pass에 pipeline을 설정
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&self.render_pipelines[self.render_pipeline_index]);
             // 3개 vertex인 instance 1개를 그림
             render_pass.draw(0..3, 0..1); // 3.
         }
@@ -270,10 +281,14 @@ impl State {
     }
 
     /// key이벤트 처리
-    pub fn handle_key(&self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
+    pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             // escape 키가 눌렸을 때 exit
             (KeyCode::Escape, true) => event_loop.exit(),
+            (KeyCode::Space, true) => {
+                self.render_pipeline_index =
+                    (self.render_pipeline_index + 1) % self.render_pipelines.len();
+            }
             _ => {}
         }
     }
