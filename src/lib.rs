@@ -23,6 +23,7 @@ pub struct State {
     /// resize가 발생하면 `true`로 설정됨
     is_surface_configured: bool,
     window: Arc<Window>,
+    clear_color: wgpu::Color,
 }
 
 impl State {
@@ -112,6 +113,12 @@ impl State {
             config,
             is_surface_configured: false,
             window,
+            clear_color: wgpu::Color {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 1.0,
+            },
         })
     }
 
@@ -167,12 +174,7 @@ impl State {
                     ops: wgpu::Operations {
                         // 이전 frame에서 저장된 color를 어떻게 처리할지 설정
                         // 여기서는 화면을 clear할거임
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         // rendered result를 texture에 저장할지 설정
                         store: wgpu::StoreOp::Store,
                     },
@@ -324,6 +326,26 @@ impl ApplicationHandler<State> for App {
                     },
                 ..
             } => state.handle_key(event_loop, code, key_state.is_pressed()),
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+            } => {
+                let size = state.window.inner_size();
+
+                let x = position.x / size.width as f64;
+                let y = position.y / size.height as f64;
+
+                let r = || x - x * y;
+                let g = || y - x * y;
+                let b = || x * y;
+
+                state.clear_color = wgpu::Color {
+                    r: r(),
+                    g: g(),
+                    b: b(),
+                    a: 1.0,
+                };
+            }
             _ => {}
         }
     }
