@@ -2,6 +2,7 @@ mod texture;
 
 use std::sync::Arc;
 
+use log::info;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -74,6 +75,58 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
+#[rustfmt::skip]
+/// 많은 그래픽스용 수학 라이브러리는 OpenGL용으로 설계되어있어서 추가 변환이 필요함
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_cols(
+    cgmath::Vector4::new(1.0, 0.0, 0.0, 0.0),
+    cgmath::Vector4::new(0.0, 1.0, 0.0, 0.0),
+    cgmath::Vector4::new(0.0, 0.0, 0.5, 0.0),
+    cgmath::Vector4::new(0.0, 0.0, 0.5, 1.0),
+);
+
+struct Camera {
+    eye: cgmath::Point3<f32>,
+    target: cgmath::Point3<f32>,
+    up: cgmath::Vector3<f32>,
+    aspect: f32,
+    fovy: f32,
+    znear: f32,
+    zfar: f32,
+}
+
+impl Camera {
+    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
+        // 이동, 회전 행렬
+        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
+        // 투영 행렬
+        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+
+        // view -> proj 매트릭스
+        return OPENGL_TO_WGPU_MATRIX * proj * view;
+    }
+}
+
+// Rust가 shader를 위해 데이터를 올바르게 저장하도록 하기 위해 필요함
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct CameraUniform {
+    // cmake를 bytemuck에서 직접 쓸 수 없음. 그래서 f32 array로 변환해야 함
+    view_proj: [[f32; 4]; 4],
+}
+
+impl CameraUniform {
+    fn new() -> Self {
+        use cgmath::SquareMatrix;
+        Self {
+            view_proj: cgmath::Matrix4::identity().into(),
+        }
+    }
+
+    fn update_view_proj(&mut self, camera: &Camera) {
+        self.view_proj = camera.build_view_projection_matrix().into();
+    }
+}
+
 /// 애플리케이션의 상태를 저장할 구조체This will store the state of our game
 pub struct State {
     /// 그림을 그릴 window의 part
@@ -92,7 +145,11 @@ pub struct State {
     num_indices: u32,
     window: Arc<Window>,
     diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: texture::Texture, // NEW
+    diffuse_texture: texture::Texture,
+    camera: Camera,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -227,6 +284,60 @@ impl State {
             label: Some("diffuse_bind_group"),
         });
 
+        info!("config: {:?}", config);
+        info!("width: {}, height: {}", config.width, config.height);
+
+        let camera = Camera {
+            // position the camera 1 unit up and 2 units back
+            // +z is out of the screen
+            eye: (0.0, 1.0, 2.0).into(),
+            // have it look at the origin
+            target: (0.0, 0.0, 0.0).into(),
+            // which way is "up"
+            up: cgmath::Vector3::unit_y(),
+            aspect: config.width as f32 / config.height as f32,
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    // vertex shader에서 사용
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        // single buffer에 size가 다른 multiple data set을 저장할 때 필요
+                        has_dynamic_offset: false,
+                        // 최소 버퍼 크기
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
+
+        // bind group 생성
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -237,7 +348,12 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 // pipeline이 사용할 BindGroupLayout을 설정함
-                bind_group_layouts: &[&texture_bind_group_layout],
+                bind_group_layouts: &[
+                    // texture
+                    &texture_bind_group_layout,
+                    // camera
+                    &camera_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -326,6 +442,10 @@ impl State {
             window,
             diffuse_bind_group,
             diffuse_texture,
+            camera,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
         })
     }
 
@@ -400,6 +520,7 @@ impl State {
             render_pass.set_pipeline(&self.render_pipeline);
             // bind group을 설정
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             // vertex buffer 설정
             render_pass.set_vertex_buffer(
                 // 사용할 vertex buffer에 대한 slot
