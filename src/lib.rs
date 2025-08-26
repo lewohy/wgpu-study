@@ -2,6 +2,7 @@ mod texture;
 
 use std::sync::Arc;
 
+use cgmath::SquareMatrix;
 use log::info;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -83,6 +84,67 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_co
     cgmath::Vector4::new(0.0, 0.0, 0.5, 0.0),
     cgmath::Vector4::new(0.0, 0.0, 0.5, 1.0),
 );
+
+struct Transform {
+    rotation: cgmath::Vector3<f32>,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct TransformUniform {
+    matrix: [[f32; 4]; 4],
+}
+
+impl TransformUniform {
+    fn new() -> Self {
+        Self {
+            matrix: cgmath::Matrix4::identity().into(),
+        }
+    }
+
+    fn update_model_matrix(&mut self, transform: &Transform) {
+        self.matrix = cgmath::Matrix4::from_angle_y(cgmath::Deg(transform.rotation.y)).into();
+    }
+}
+
+struct TransformController {
+    speed: f32,
+    is_clockwise_pressed: bool,
+    is_counterclockwise_pressed: bool,
+}
+
+impl TransformController {
+    fn new(speed: f32) -> Self {
+        Self {
+            speed,
+            is_clockwise_pressed: false,
+            is_counterclockwise_pressed: false,
+        }
+    }
+
+    fn handle_key(&mut self, key: KeyCode, is_pressed: bool) -> bool {
+        match key {
+            KeyCode::KeyQ => {
+                self.is_clockwise_pressed = is_pressed;
+                true
+            }
+            KeyCode::KeyE => {
+                self.is_counterclockwise_pressed = is_pressed;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn update_transform(&self, transform: &mut Transform) {
+        if self.is_clockwise_pressed {
+            transform.rotation.y += self.speed;
+        }
+        if self.is_counterclockwise_pressed {
+            transform.rotation.y -= self.speed;
+        }
+    }
+}
 
 struct Camera {
     eye: cgmath::Point3<f32>,
@@ -225,6 +287,11 @@ pub struct State {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    transform: Transform,
+    transform_controller: TransformController,
+    transform_uniform: TransformUniform,
+    transform_buffer: wgpu::Buffer,
+    transform_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -412,6 +479,45 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
+        let transform = Transform {
+            rotation: cgmath::Vector3::new(0.0, 0.0, 0.0),
+        };
+
+        let transform_controller = TransformController::new(10f32);
+
+        let mut transform_uniform = TransformUniform::new();
+        transform_uniform.update_model_matrix(&transform);
+
+        let transform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Transform Buffer"),
+            contents: bytemuck::cast_slice(&[transform_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let transform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("transform_bind_group_layout"),
+            });
+
+        let transform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &transform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: transform_buffer.as_entire_binding(),
+            }],
+            label: Some("transform_bind_group"),
+        });
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -427,6 +533,7 @@ impl State {
                     &texture_bind_group_layout,
                     // camera
                     &camera_bind_group_layout,
+                    &transform_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -521,6 +628,11 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
+            transform,
+            transform_controller,
+            transform_uniform,
+            transform_buffer,
+            transform_bind_group,
         })
     }
 
@@ -598,6 +710,7 @@ impl State {
             // bind group을 설정
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.transform_bind_group, &[]);
             // vertex buffer 설정
             render_pass.set_vertex_buffer(
                 // 사용할 vertex buffer에 대한 slot
@@ -623,6 +736,7 @@ impl State {
             (KeyCode::Escape, true) => event_loop.exit(),
             _ => {
                 self.camera_controller.handle_key(code, is_pressed);
+                self.transform_controller.handle_key(code, is_pressed);
             }
         }
     }
@@ -635,6 +749,15 @@ impl State {
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+
+        self.transform_controller
+            .update_transform(&mut self.transform);
+        self.transform_uniform.update_model_matrix(&self.transform);
+        self.queue.write_buffer(
+            &self.transform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.transform_uniform]),
         );
     }
 }
