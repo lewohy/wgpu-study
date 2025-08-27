@@ -11,6 +11,9 @@ pub struct Texture {
 }
 
 impl Texture {
+    // render pipeline에서 depth stage를 생성하고 depth texture를 생성하기 위해 필요
+    pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
     pub fn from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -95,5 +98,55 @@ impl Texture {
             view,
             sampler,
         })
+    }
+
+    pub fn create_depth_texture(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+        label: &str,
+    ) -> Self {
+        let size = wgpu::Extent3d {
+            // depth texture는 screen size와 일치해야함. config에서 크기 정보를 가져옴
+            width: config.width.max(1),
+            height: config.height.max(1),
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::DEPTH_FORMAT,
+            usage: (
+                // 이 texture에 렌더링 할 것이므로 RENDER_ATTACHMENT를 설정
+                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING
+            ),
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            // 기술적으로는 sampler가 필요하지 않지만, Texture 구조체가 필요로 하고 언젠가 필요할 수도 있으므로 생성
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            // depth texture를 렌더링 하기로 한다면, CompareFunction::LessEqual를 사용해야 함
+            // 이것은 `sampler_comparison`과 `textureSampleCompare()`가 GLSL의 function에서 `texture()`과 상호작용하는 방법이기 때문
+            compare: Some(wgpu::CompareFunction::LessEqual), // 5.
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+
+        Self {
+            texture,
+            view,
+            sampler,
+        }
     }
 }

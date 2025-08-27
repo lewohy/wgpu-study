@@ -16,6 +16,8 @@ use winit::{
     window::Window,
 };
 
+use crate::texture::Texture;
+
 const NUM_INSTANCES_PER_ROW: u32 = 10;
 const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
     NUM_INSTANCES_PER_ROW as f32 * 0.5,
@@ -293,6 +295,7 @@ pub struct State {
     camera_bind_group: wgpu::BindGroup,
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
+    depth_texture: Texture,
 }
 
 impl State {
@@ -480,6 +483,9 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
+        let depth_texture =
+            texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -540,7 +546,16 @@ impl State {
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: None, // 1.
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                // 언제 new pixel을 discard할지 설정
+                // less는 앞에서 뒤로 그려짐을 의미
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(), // 2.
+                bias: wgpu::DepthBiasState::default(),
+            }),
+
             multisample: wgpu::MultisampleState {
                 // 몇 개의 pipeline을 사용할지 설정
                 // multisampling을 사용하지 않으므로 1로 설정
@@ -626,6 +641,7 @@ impl State {
             camera_bind_group,
             instances,
             instance_buffer,
+            depth_texture,
         })
     }
 
@@ -639,6 +655,8 @@ impl State {
             self.is_surface_configured = true;
 
             self.camera.aspect = self.config.width as f32 / self.config.height as f32;
+            self.depth_texture =
+                texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
         }
     }
 
@@ -693,7 +711,14 @@ impl State {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
