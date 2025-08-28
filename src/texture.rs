@@ -122,7 +122,7 @@ impl Texture {
                 // 이 texture에 렌더링 할 것이므로 RENDER_ATTACHMENT를 설정
                 wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING
             ),
-            view_formats: &[],
+            view_formats: &[Self::DEPTH_FORMAT],
         };
         let texture = device.create_texture(&desc);
 
@@ -132,12 +132,10 @@ impl Texture {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            // depth texture를 렌더링 하기로 한다면, CompareFunction::LessEqual를 사용해야 함
-            // 이것은 `sampler_comparison`과 `textureSampleCompare()`가 GLSL의 function에서 `texture()`과 상호작용하는 방법이기 때문
-            compare: Some(wgpu::CompareFunction::LessEqual), // 5.
+            compare: None,
             lod_min_clamp: 0.0,
             lod_max_clamp: 100.0,
             ..Default::default()
