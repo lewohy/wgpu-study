@@ -287,6 +287,7 @@ pub struct State {
     num_indices: u32,
     window: Arc<Window>,
     diffuse_bind_group: wgpu::BindGroup,
+    #[allow(dead_code)]
     diffuse_texture: texture::Texture,
     camera: Camera,
     camera_controller: CameraController,
@@ -710,6 +711,7 @@ impl State {
                         // rendered result를 texture에 저장할지 설정
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.view,

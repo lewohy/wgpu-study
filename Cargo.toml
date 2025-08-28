@@ -13,7 +13,7 @@ anyhow = "1.0"
 winit = "0.30"
 env_logger = "0.10"
 log = "0.4"
-wgpu = "25.0"
+wgpu = "26.0.1"
 bytemuck = { version = "1.16", features = [ "derive" ] }
 cgmath = "0.18"
 
@@ -28,7 +28,7 @@ crate-type = ["cdylib", "rlib"]
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
 console_log = "1.0"
-wgpu = { version = "25.0", features = ["webgl"] }
+wgpu = { version = "26.0.1", features = ["webgl"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.30"
 web-sys = { version = "0.3", features = ["Document", "Window", "Element"] }
