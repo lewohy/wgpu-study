@@ -6,14 +6,50 @@
         {
             "label": "wasm-pack build",
             "type": "shell",
-            "command": "trunk",
+            "command": "wasm-pack",
+            "args": ["build", "--target", "web"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "cargo watch",
+            "type": "shell",
+            "command": "cargo",
             "args": [
-                "serve",
+                "watch",
+                "-w",
+                "src",
+                "-s",
+                "wasm-pack build --target web"
             ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "vite",
+            "type": "shell",
+            "command": "npx",
+            "args": ["vite"],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "dependsOn": ["wasm-pack build"]
+        },
+        {
+            "label": "start dev server",
+            "type": "shell",
+            "command": "echo h",
             "group": {
                 "kind": "test",
                 "isDefault": true
-            }
+            },
+            "dependsOn": ["cargo watch", "vite"],
+            "dependsOrder": "parallel"
         }
     ]
 }

@@ -26,6 +26,13 @@
 </style>
 
 <body>
+    <script type="module">
+        import init from "/pkg/wgpu_study.js";
+
+        init().then(() => {
+            console.log("WASM Loaded");
+        });
+    </script>
     <canvas id="canvas" width="800" height="800"></canvas>
 </body>
 

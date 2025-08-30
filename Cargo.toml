@@ -8,6 +8,12 @@ edition = "2024"
 [profile.release]
 strip = true
 
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [dependencies]
 anyhow = "1.0"
 winit = "0.30"
@@ -16,11 +22,17 @@ log = "0.4"
 wgpu = "26.0.1"
 bytemuck = { version = "1.16", features = [ "derive" ] }
 cgmath = "0.18"
+tobj = { version = "3.2", default-features = false, features = ["async"]}
 
 [dependencies.image]
 version = "0.24"
 default-features = false
 features = ["png", "jpeg"]
+
+[build-dependencies]
+anyhow = "1.0"
+fs_extra = "1.2"
+glob = "0.3"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -31,4 +43,5 @@ console_log = "1.0"
 wgpu = { version = "26.0.1", features = ["webgl"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.30"
-web-sys = { version = "0.3", features = ["Document", "Window", "Element"] }
+web-sys = { version = "0.3", features = ["Document", "Window", "Element", "Location"] }
+reqwest = { version = "0.11" }
