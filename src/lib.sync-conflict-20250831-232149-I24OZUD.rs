@@ -444,19 +444,26 @@ impl State {
 
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    // vertex shader와 fragment shader에서 접근 가능
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        // single buffer에 size가 다른 multiple data set을 저장할 때 필요
-                        has_dynamic_offset: false,
-                        // 최소 버퍼 크기
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutBinding {
+                        // ...
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, // Updated!
+                                                                                               // ...
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        // vertex shader에서 사용
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            // single buffer에 size가 다른 multiple data set을 저장할 때 필요
+                            has_dynamic_offset: false,
+                            // 최소 버퍼 크기
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
                 label: Some("camera_bind_group_layout"),
             });
 
