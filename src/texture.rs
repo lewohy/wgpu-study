@@ -19,9 +19,10 @@ impl Texture {
         queue: &wgpu::Queue,
         bytes: &[u8],
         label: &str,
+        is_normal_map: bool,
     ) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label))
+        Self::from_image(device, queue, &img, Some(label), is_normal_map)
     }
 
     pub fn from_image(
@@ -29,6 +30,7 @@ impl Texture {
         queue: &wgpu::Queue,
         img: &image::DynamicImage,
         label: Option<&str>,
+        is_normal_map: bool,
     ) -> Result<Self> {
         // as_rgba8은 jpeg에서 panic이 발생할 수 있음
         let rgba = img.to_rgba8();
@@ -40,6 +42,13 @@ impl Texture {
             // 모든 texture는 3D로 저장됨. 2D texture를 표현하기 위해 dpeth를 1로 설정함
             depth_or_array_layers: 1,
         };
+        // GPU가 이름에 Srgb가 있는 텍스쳐를 샘플링할 때 감마 보정을 수행함
+        // 노말매핑에서는 보정하지 않도록 포맷을 설정
+        let format = if is_normal_map {
+            wgpu::TextureFormat::Rgba8Unorm
+        } else {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label,
             size,
@@ -47,7 +56,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             // sRGB를 사용하므로 맞게 설정
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format,
             // TEXTURE_BINDING: shader에서 texture를 사용하기 위함
             // COPY_DST: data를 이 texture로 복사하기 위함
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
